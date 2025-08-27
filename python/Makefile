@@ -2,9 +2,9 @@ PYTHON_ILM_MOD=_ilm.so
 PYTHON_IDM_API_MOD=_idm_api.so
 PYTHON_ANI_API_MOD=_ani_api.so
 
-SWIG = /usr/local/bin/swig
+SWIG = /usr/bin/swig
 SWIGFLAGS = -python
-CFLAGS = -DTEST -c -fpic -I/usr/include/python3.6m -I../src
+CFLAGS = -DTEST -c -fpic -I/usr/include/python3.9 -I../src
 LDFLAGS = -shared
 LDLIBS = -lpthread -luuid
 
