@@ -91,12 +91,29 @@ sudo ldconfig
 log_info "Verifying library registration..."
 
 if ! ldconfig -p | grep -q libseagate_ilm; then
-    log_error "libseagate_ilm not found in library cache after ldconfig"
-    log_error "Check that library was installed correctly"
-    exit 1
+    log_warn "libseagate_ilm not found in library cache after initial ldconfig"
+    log_info "Checking if /usr/lib64 is in ldconfig search path..."
+    
+    if ! grep -r "^/usr/lib64$" /etc/ld.so.conf /etc/ld.so.conf.d/ 2>/dev/null | grep -q .; then
+        log_info "/usr/lib64 not in ldconfig path, adding it..."
+        echo "/usr/lib64" | sudo tee /etc/ld.so.conf.d/seagate_ilm-x86_64.conf > /dev/null
+        sudo ldconfig
+        
+        if ! ldconfig -p | grep -q libseagate_ilm; then
+            log_error "libseagate_ilm still not found in library cache after adding /usr/lib64"
+            log_error "Check that library was installed correctly"
+            exit 1
+        fi
+        
+        log_info "✓ libseagate_ilm found in library cache after adding /usr/lib64 to ldconfig path"
+    else
+        log_error "libseagate_ilm not found in library cache, but /usr/lib64 is already in ldconfig path"
+        log_error "Check that library was installed correctly"
+        exit 1
+    fi
+else
+    log_info "✓ libseagate_ilm found in library cache"
 fi
-
-log_info "✓ libseagate_ilm found in library cache"
 
 if command -v pkg-config &> /dev/null; then
     log_info "Verifying pkg-config can find libseagate_ilm..."
