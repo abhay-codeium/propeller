@@ -257,6 +257,34 @@ fi
 
 log_info "✓ LVM configure completed successfully with IDM support enabled"
 
+if [ "$ENABLE_IDM" = "yes" ]; then
+    log_info "Applying workaround for LOCKDIDM_SUPPORT macro..."
+    
+    if ! grep -q "define LOCKDIDM_SUPPORT" include/configure.h; then
+        log_warn "LOCKDIDM_SUPPORT not found in include/configure.h, adding it manually"
+        
+        sed -i '/LOCKDSANLOCK_SUPPORT/a\
+\
+/* Define to 1 to include code that uses lvmlockd IDM option. */\
+#define LOCKDIDM_SUPPORT 1' include/configure.h
+        
+        if grep -q "define LOCKDIDM_SUPPORT" include/configure.h; then
+            log_info "✓ LOCKDIDM_SUPPORT successfully added to include/configure.h"
+        else
+            log_error "Failed to add LOCKDIDM_SUPPORT to include/configure.h"
+            exit 1
+        fi
+    else
+        log_info "✓ LOCKDIDM_SUPPORT already present in include/configure.h"
+    fi
+    
+    if grep -q "#ifdef LOCKDSANLOCK_SUPPORT" daemons/lvmlockd/lvmlockd-internal.h; then
+        log_info "Fixing typo in lvmlockd-internal.h (LOCKDSANLOCK_SUPPORT -> LOCKDIDM_SUPPORT)..."
+        sed -i 's/#ifdef LOCKDSANLOCK_SUPPORT/#ifdef LOCKDIDM_SUPPORT/' daemons/lvmlockd/lvmlockd-internal.h
+        log_info "✓ Typo fixed in lvmlockd-internal.h"
+    fi
+fi
+
 log_info "Building LVM..."
 make
 
