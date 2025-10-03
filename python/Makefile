@@ -4,7 +4,7 @@ PYTHON_ANI_API_MOD=_ani_api.so
 
 SWIG = /usr/bin/swig
 SWIGFLAGS = -python
-CFLAGS = -DTEST -c -fpic -I/usr/include/python3.9 -I../src
+CFLAGS = -DTEST -c -fpic $(shell python3-config --includes) -I../src
 LDFLAGS = -shared
 LDLIBS = -lpthread -luuid
 
