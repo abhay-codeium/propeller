@@ -188,19 +188,28 @@ LVMLOCKD_OPTIONS=""
 if [ "$ENABLE_DLM" = "yes" ]; then
     log_info "DLM lock manager enabled"
     LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-dlm"
+else
+    log_info "DLM lock manager explicitly disabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --disable-lvmlockd-dlm"
 fi
 
 if [ "$ENABLE_SANLOCK" = "yes" ]; then
     log_info "Sanlock lock manager enabled"
     LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-sanlock"
+else
+    log_info "Sanlock lock manager explicitly disabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --disable-lvmlockd-sanlock"
 fi
 
 if [ "$ENABLE_IDM" = "yes" ]; then
     log_info "IDM lock manager enabled"
     LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-idm"
+else
+    log_info "IDM lock manager explicitly disabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --disable-lvmlockd-idm"
 fi
 
-if [ -z "$LVMLOCKD_OPTIONS" ]; then
+if [ "$ENABLE_DLM" != "yes" ] && [ "$ENABLE_SANLOCK" != "yes" ] && [ "$ENABLE_IDM" != "yes" ]; then
     log_error "No lock managers enabled. At least one of ENABLE_DLM, ENABLE_SANLOCK, or ENABLE_IDM must be 'yes'"
     exit 1
 fi
