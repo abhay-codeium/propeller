@@ -286,6 +286,25 @@ if [ "$ENABLE_IDM" = "yes" ]; then
     else
         log_info "✓ LOCKDIDM_SUPPORT already present in include/configure.h"
     fi
+    
+    log_info "Applying workaround for lvmlockd-internal.h preprocessor guard bug..."
+    
+    if grep -q "^#ifdef LOCKDSANLOCK_SUPPORT$" daemons/lvmlockd/lvmlockd-internal.h && \
+       grep -A 5 "^#ifdef LOCKDSANLOCK_SUPPORT$" daemons/lvmlockd/lvmlockd-internal.h | grep -q "int lm_data_size_idm"; then
+        log_warn "Found incorrect preprocessor guard in lvmlockd-internal.h, fixing it"
+        
+        sed -i 's/^#ifdef LOCKDSANLOCK_SUPPORT$/#ifdef LOCKDIDM_SUPPORT/g' daemons/lvmlockd/lvmlockd-internal.h
+        
+        if grep -q "^#ifdef LOCKDIDM_SUPPORT$" daemons/lvmlockd/lvmlockd-internal.h && \
+           grep -A 5 "^#ifdef LOCKDIDM_SUPPORT$" daemons/lvmlockd/lvmlockd-internal.h | grep -q "int lm_data_size_idm"; then
+            log_info "✓ Preprocessor guard successfully fixed in lvmlockd-internal.h"
+        else
+            log_error "Failed to fix preprocessor guard in lvmlockd-internal.h"
+            exit 1
+        fi
+    else
+        log_info "✓ Preprocessor guard already correct in lvmlockd-internal.h"
+    fi
 fi
 
 log_info "Building LVM..."
