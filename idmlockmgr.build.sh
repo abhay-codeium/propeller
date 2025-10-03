@@ -1,0 +1,245 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-only
+# Copyright (C) 2021 Seagate Technology LLC and/or its Affiliates.
+#
+
+set -e
+
+PROPELLER_DIR="${PROPELLER_DIR:-$(pwd)}"
+LVM_DIR="${LVM_DIR:-$HOME/repos/lvm2-idm}"
+LVM_BRANCH="${LVM_BRANCH:-centos7_lvm2}"
+LVM_REPO="${LVM_REPO:-https://github.com/Seagate/lvm2-idm}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+check_command() {
+    if ! command -v "$1" &> /dev/null; then
+        log_error "$1 is not installed. Please install it first."
+        return 1
+    fi
+    return 0
+}
+
+log_info "Performing pre-flight checks..."
+
+for cmd in gcc make git ldconfig; do
+    check_command "$cmd" || exit 1
+done
+
+if ! check_command pkg-config; then
+    log_warn "pkg-config is not installed. LVM configure may have trouble detecting IDM support."
+    log_warn "Install with: sudo apt-get install pkg-config (Ubuntu/Debian) or sudo yum install pkgconfig (RHEL/CentOS)"
+fi
+
+log_info "Checking for required development libraries..."
+if ! ldconfig -p | grep -q libuuid; then
+    log_error "libuuid not found. Install with: sudo apt-get install uuid-dev or sudo yum install libuuid-devel"
+    exit 1
+fi
+
+if ! ldconfig -p | grep -q libblkid; then
+    log_error "libblkid not found. Install with: sudo apt-get install libblkid-dev or sudo yum install libblkid-devel"
+    exit 1
+fi
+
+log_info "Building Propeller IDM Lock Manager..."
+cd "$PROPELLER_DIR"
+
+if [ ! -f "Makefile" ]; then
+    log_error "Propeller Makefile not found. Are you in the correct directory?"
+    exit 1
+fi
+
+make clean
+make
+
+if [ $? -ne 0 ]; then
+    log_error "Propeller build failed"
+    exit 1
+fi
+
+log_info "Propeller build completed successfully"
+
+log_info "Installing Propeller IDM Lock Manager (requires sudo)..."
+sudo make install
+
+if [ $? -ne 0 ]; then
+    log_error "Propeller installation failed"
+    exit 1
+fi
+
+log_info "Propeller installation completed"
+
+log_info "Updating library cache with ldconfig..."
+sudo ldconfig
+
+log_info "Verifying library registration..."
+
+if ! ldconfig -p | grep -q libseagate_ilm; then
+    log_error "libseagate_ilm not found in library cache after ldconfig"
+    log_error "Check that library was installed correctly"
+    exit 1
+fi
+
+log_info "✓ libseagate_ilm found in library cache"
+
+if command -v pkg-config &> /dev/null; then
+    log_info "Verifying pkg-config can find libseagate_ilm..."
+    
+    if pkg-config --exists libseagate_ilm; then
+        log_info "✓ pkg-config can find libseagate_ilm"
+        log_info "  Version: $(pkg-config --modversion libseagate_ilm)"
+        log_info "  Cflags: $(pkg-config --cflags libseagate_ilm)"
+        log_info "  Libs: $(pkg-config --libs libseagate_ilm)"
+    else
+        log_warn "pkg-config cannot find libseagate_ilm"
+        log_warn "This may cause LVM configure to fail"
+        
+        if [ -f "/usr/lib64/pkgconfig/libseagate_ilm.pc" ]; then
+            log_info "Found .pc file at /usr/lib64/pkgconfig/libseagate_ilm.pc"
+            log_info "You may need to set: export PKG_CONFIG_PATH=/usr/lib64/pkgconfig"
+            export PKG_CONFIG_PATH="/usr/lib64/pkgconfig:$PKG_CONFIG_PATH"
+            
+            if pkg-config --exists libseagate_ilm; then
+                log_info "✓ pkg-config can now find libseagate_ilm after setting PKG_CONFIG_PATH"
+            fi
+        fi
+    fi
+fi
+
+log_info "Setting up LVM repository..."
+
+if [ ! -d "$LVM_DIR" ]; then
+    log_info "Cloning LVM repository to $LVM_DIR..."
+    mkdir -p "$(dirname "$LVM_DIR")"
+    git clone "$LVM_REPO" "$LVM_DIR"
+    cd "$LVM_DIR"
+    git checkout -b "$LVM_BRANCH" "origin/$LVM_BRANCH" 2>/dev/null || git checkout "$LVM_BRANCH"
+else
+    log_info "LVM repository already exists at $LVM_DIR"
+    cd "$LVM_DIR"
+    log_info "Updating repository..."
+    git fetch
+    git checkout "$LVM_BRANCH" || log_warn "Branch $LVM_BRANCH not found, using current branch"
+fi
+
+log_info "Configuring LVM with IDM support..."
+
+export PKG_CONFIG_PATH="/usr/lib64/pkgconfig:$PKG_CONFIG_PATH"
+
+./configure \
+    --build=x86_64-redhat-linux-gnu \
+    --host=x86_64-redhat-linux-gnu \
+    --program-prefix= \
+    --disable-dependency-tracking \
+    --prefix=/usr \
+    --exec-prefix=/usr \
+    --bindir=/usr/bin \
+    --sbindir=/usr/sbin \
+    --sysconfdir=/etc \
+    --datadir=/usr/share \
+    --includedir=/usr/include \
+    --libdir=/usr/lib64 \
+    --libexecdir=/usr/libexec \
+    --localstatedir=/var \
+    --sharedstatedir=/var/lib \
+    --mandir=/usr/share/man \
+    --infodir=/usr/share/info \
+    --with-default-dm-run-dir=/run \
+    --with-default-run-dir=/run/lvm \
+    --with-default-pid-dir=/run \
+    --with-default-locking-dir=/run/lock/lvm \
+    --with-usrlibdir=/usr/lib64 \
+    --enable-fsadm \
+    --enable-write_install \
+    --with-user= \
+    --with-group= \
+    --with-device-uid=0 \
+    --with-device-gid=6 \
+    --with-device-mode=0660 \
+    --enable-pkgconfig \
+    --enable-applib \
+    --enable-cmdlib \
+    --enable-dmeventd \
+    --enable-blkid_wiping \
+    --with-cluster=internal \
+    --enable-udev_sync \
+    --with-thin=internal \
+    --enable-lvmpolld \
+    --enable-lvmlockd-dlm \
+    --enable-lvmlockd-sanlock \
+    --enable-lvmlockd-idm \
+    --enable-dmfilemapd
+
+if [ $? -ne 0 ]; then
+    log_error "LVM configure failed"
+    log_error "Check that all dependencies are installed and that LOCKD_IDM was detected"
+    exit 1
+fi
+
+log_info "Verifying LOCKD_IDM was detected..."
+if ! grep -q "LOCKD_IDM 1" config.h 2>/dev/null; then
+    log_error "LOCKD_IDM was not enabled in LVM configuration"
+    log_error "The configure step may have failed to detect libseagate_ilm"
+    exit 1
+fi
+
+log_info "✓ LOCKD_IDM support successfully enabled"
+
+log_info "Building LVM..."
+make
+
+if [ $? -ne 0 ]; then
+    log_error "LVM build failed"
+    exit 1
+fi
+
+log_info "LVM build completed successfully"
+
+log_info "Installing LVM (requires sudo)..."
+log_warn "WARNING: Installing LVM will replace your system LVM installation"
+log_warn "This may cause boot issues if your root filesystem is on LVM"
+
+read -p "Do you want to proceed with LVM installation? (y/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    sudo make install
+    
+    if [ $? -ne 0 ]; then
+        log_error "LVM installation failed"
+        exit 1
+    fi
+    
+    log_info "LVM installation completed"
+else
+    log_info "Skipping LVM installation"
+fi
+
+echo
+log_info "========================================="
+log_info "Build completed successfully!"
+log_info "========================================="
+log_info "Propeller IDM Lock Manager: Installed"
+log_info "LVM with IDM support: Built (and optionally installed)"
+log_info ""
+log_info "Next steps:"
+log_info "1. Start the IDM lock manager: sudo systemctl start seagate_ilm"
+log_info "2. Configure lvmlockd to use IDM: edit /usr/lib/systemd/system/lvm2-lvmlockd.service"
+log_info "3. Start lvmlockd: sudo systemctl start lvm2-lvmlockd"
+log_info ""
+log_info "For more information, see: $PROPELLER_DIR/doc/lvm_propeller_install.md"

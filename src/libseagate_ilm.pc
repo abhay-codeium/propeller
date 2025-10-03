@@ -1,7 +1,7 @@
 prefix=/usr
 exec_prefix=${prefix}
 includedir=${prefix}/include
-libdir=${exec_prefix}/lib
+libdir=${exec_prefix}/lib64
 
 Name: libseagate_ilm
 Description: The Seagate In Drive Mutex (IDM) library
