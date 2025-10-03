@@ -286,12 +286,6 @@ if [ "$ENABLE_IDM" = "yes" ]; then
     else
         log_info "✓ LOCKDIDM_SUPPORT already present in include/configure.h"
     fi
-    
-    if grep -q "#ifdef LOCKDSANLOCK_SUPPORT" daemons/lvmlockd/lvmlockd-internal.h; then
-        log_info "Fixing typo in lvmlockd-internal.h (LOCKDSANLOCK_SUPPORT -> LOCKDIDM_SUPPORT)..."
-        sed -i 's/#ifdef LOCKDSANLOCK_SUPPORT/#ifdef LOCKDIDM_SUPPORT/' daemons/lvmlockd/lvmlockd-internal.h
-        log_info "✓ Typo fixed in lvmlockd-internal.h"
-    fi
 fi
 
 log_info "Building LVM..."
