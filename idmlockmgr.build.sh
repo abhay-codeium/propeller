@@ -10,6 +10,10 @@ LVM_DIR="${LVM_DIR:-$HOME/repos/lvm2-idm}"
 LVM_BRANCH="${LVM_BRANCH:-centos7_lvm2}"
 LVM_REPO="${LVM_REPO:-https://github.com/Seagate/lvm2-idm}"
 
+ENABLE_DLM="${ENABLE_DLM:-no}"
+ENABLE_SANLOCK="${ENABLE_SANLOCK:-no}"
+ENABLE_IDM="${ENABLE_IDM:-yes}"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -42,8 +46,9 @@ for cmd in gcc make git ldconfig; do
 done
 
 if ! check_command pkg-config; then
-    log_warn "pkg-config is not installed. LVM configure may have trouble detecting IDM support."
-    log_warn "Install with: sudo apt-get install pkg-config (Ubuntu/Debian) or sudo yum install pkgconfig (RHEL/CentOS)"
+    log_error "pkg-config is not installed but is required for LVM configure to detect IDM support."
+    log_error "Install with: sudo apt-get install pkg-config (Ubuntu/Debian) or sudo yum install pkgconfig (RHEL/CentOS)"
+    exit 1
 fi
 
 log_info "Checking for required development libraries..."
@@ -54,6 +59,28 @@ fi
 
 if ! ldconfig -p | grep -q libblkid; then
     log_error "libblkid not found. Install with: sudo apt-get install libblkid-dev or sudo yum install libblkid-devel"
+    exit 1
+fi
+
+log_info "Checking for LVM build dependencies..."
+MISSING_DEPS=""
+
+if [ ! -f /usr/include/libaio.h ]; then
+    MISSING_DEPS="${MISSING_DEPS}libaio-dev (Ubuntu/Debian) or libaio-devel (RHEL/CentOS)\n"
+fi
+
+if ! ldconfig -p | grep -q libudev; then
+    MISSING_DEPS="${MISSING_DEPS}libudev-dev (Ubuntu/Debian) or systemd-devel (RHEL/CentOS)\n"
+fi
+
+if [ ! -f /usr/include/readline/readline.h ]; then
+    MISSING_DEPS="${MISSING_DEPS}libreadline-dev (Ubuntu/Debian) or readline-devel (RHEL/CentOS)\n"
+fi
+
+if [ -n "$MISSING_DEPS" ]; then
+    log_error "Missing LVM build dependencies:"
+    echo -e "$MISSING_DEPS"
+    log_error "Please install the missing dependencies before running this script"
     exit 1
 fi
 
@@ -157,6 +184,27 @@ fi
 
 log_info "Configuring LVM with IDM support..."
 
+LVMLOCKD_OPTIONS=""
+if [ "$ENABLE_DLM" = "yes" ]; then
+    log_info "DLM lock manager enabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-dlm"
+fi
+
+if [ "$ENABLE_SANLOCK" = "yes" ]; then
+    log_info "Sanlock lock manager enabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-sanlock"
+fi
+
+if [ "$ENABLE_IDM" = "yes" ]; then
+    log_info "IDM lock manager enabled"
+    LVMLOCKD_OPTIONS="$LVMLOCKD_OPTIONS --enable-lvmlockd-idm"
+fi
+
+if [ -z "$LVMLOCKD_OPTIONS" ]; then
+    log_error "No lock managers enabled. At least one of ENABLE_DLM, ENABLE_SANLOCK, or ENABLE_IDM must be 'yes'"
+    exit 1
+fi
+
 export PKG_CONFIG_PATH="/usr/lib64/pkgconfig:$PKG_CONFIG_PATH"
 
 ./configure \
@@ -198,25 +246,16 @@ export PKG_CONFIG_PATH="/usr/lib64/pkgconfig:$PKG_CONFIG_PATH"
     --enable-udev_sync \
     --with-thin=internal \
     --enable-lvmpolld \
-    --enable-lvmlockd-dlm \
-    --enable-lvmlockd-sanlock \
-    --enable-lvmlockd-idm \
+    $LVMLOCKD_OPTIONS \
     --enable-dmfilemapd
 
 if [ $? -ne 0 ]; then
     log_error "LVM configure failed"
-    log_error "Check that all dependencies are installed and that LOCKD_IDM was detected"
+    log_error "Check that all dependencies are installed and that lock manager support was detected"
     exit 1
 fi
 
-log_info "Verifying LOCKD_IDM was detected..."
-if ! grep -q "LOCKD_IDM 1" config.h 2>/dev/null; then
-    log_error "LOCKD_IDM was not enabled in LVM configuration"
-    log_error "The configure step may have failed to detect libseagate_ilm"
-    exit 1
-fi
-
-log_info "✓ LOCKD_IDM support successfully enabled"
+log_info "✓ LVM configure completed successfully with IDM support enabled"
 
 log_info "Building LVM..."
 make
